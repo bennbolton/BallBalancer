@@ -11,9 +11,9 @@
 #define PUL_C 6        // Step of stepper motor 2
 
 // Create instances of the AccelStepper class for each motor:
-AccelStepper stepper1(AccelStepper::FULL2WIRE, DIR_A, PUL_A);
-AccelStepper stepper2(AccelStepper::FULL2WIRE, DIR_B, PUL_B);
-AccelStepper stepper3(AccelStepper::FULL2WIRE, DIR_C, PUL_C);
+AccelStepper stepper1(AccelStepper::FULL2WIRE, PUL_A, DIR_A);
+AccelStepper stepper2(AccelStepper::FULL2WIRE, PUL_B, DIR_B);
+AccelStepper stepper3(AccelStepper::FULL2WIRE, PUL_C, DIR_C);
 
 void setup() {
   
