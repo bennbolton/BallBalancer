@@ -12,7 +12,6 @@
 
 
 //Robot Parameters
-
 #define WHEELRADIUS 0.1
 #define WHEELDISTANCE 0.075
 #define MICROSTEP 8
@@ -71,12 +70,13 @@ void setup() {
 void loop() {
   dT = micros()-timer;
   
-  robotDirection direction = vectorFromAngle(230, 0.1);
-  //robotDirection direction = {0,0,4*PI}; //spin
-  //robotDirection direction = {0.1,0.3,0}; //vector
-  robotWheelSpeeds speeds = getWheelSpeeds(direction);
+  // robotDirection direction = vectorFromAngle(230, 0.1);
+  // robotDirection direction = {0,0,4*PI}; //spin
+  // robotDirection direction = {0,0,00}; //vector
+  // robotWheelSpeeds speeds = getWheelSpeeds(direction);
   
-  setWheelSpeeds(speeds);
+  // setWheelSpeeds(speeds);
+  stepper2.setSpeed(500);
   runMotors();
 
   // Serial.println(stepsFromSpeed(speeds.one));

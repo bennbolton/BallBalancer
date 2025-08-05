@@ -3,19 +3,45 @@ from scipy import linalg
 from matplotlib import pyplot as plt
 
  #https://github.com/nliaudat/magnetometer_calibration/blob/main/calibrate.py
- #corrected code S. James Remington, see issue #1 in above contribution.
- #required data input file: x,y,z values in .csv (text, comma separated value) format.
- # see example mag3_raw.csv, .out
+ #corrected code S. James Remington
  
 class Magnetometer(object):
     
     '''
+	To obtain Gravitation Field (raw format):
+    1) get the Total Field for your location from here:
+       http://www.ngdc.noaa.gov/geomag-web (tab Magnetic Field)
+       es. Total Field = 47,241.3 nT | my val :47'789.7
+    2) Convert this values to Gauss (1nT = 10E-5G)
+       es. Total Field = 47,241.3 nT = 0.47241G
+    3) Convert Total Field to Raw value Total Field, which is the
+       Raw Gravitation Field we are searching for
+       Read your magnetometer datasheet and find your gain value,
+       Which should be the same of the collected raw points
+       es. on HMC5883L, given +_ 1.3 Ga as Sensor Field Range settings
+           Gain (LSB/Gauss) = 1090 
+           Raw Total Field = Gain * Total Field
+           0.47241 * 1090 = ~515  |
+           
+        -----------------------------------------------
+         gain (LSB/Gauss) values for HMC5883L
+            0.88 Ga => 1370 
+            1.3 Ga => 1090 
+            1.9 Ga => 820
+            2.5 Ga => 660 
+            4.0 Ga => 440
+            4.7 Ga => 390 
+            5.6 Ga => 330
+            8.1 Ga => 230 
+        -----------------------------------------------
+	
+	
      references :
         -  https://teslabs.com/articles/magnetometer-calibration/      
         -  https://www.best-microcontroller-projects.com/hmc5883l.html
 
     '''
-    MField = 1000  #arbitrary norm of magnetic field vectors
+    MField = 330 #Gravitation Field : TO CHANGE according the previous formula
 
     def __init__(self, F=MField): 
 
@@ -26,74 +52,88 @@ class Magnetometer(object):
         self.A_1 = np.eye(3)
         
     def run(self):
-
-        data = np.loadtxt("mag3_raw.csv",delimiter=',')
-        data = data[:, [3, 4, 5]]
-        print("shape of data array:",data.shape)
-        #print("datatype of data:",data.dtype)
+        data = np.loadtxt("mag_out.txt", delimiter=',')
+        print("shape of data array:", data.shape)
         print("First 5 rows raw:\n", data[:5])
-        
-        # ellipsoid fit
+
+
+        print("Raw axis min/max:")
+        print("X:", np.min(data[:,0]), np.max(data[:,0]))
+        print("Y:", np.min(data[:,1]), np.max(data[:,1]))
+        print("Z:", np.min(data[:,2]), np.max(data[:,2]))
+
+        # Ellipsoid fit
         s = np.array(data).T
         M, n, d = self.__ellipsoid_fit(s)
 
-        # calibration parameters
+        # Calibration parameters
         M_1 = linalg.inv(M)
         self.b = -np.dot(M_1, n)
-        self.A_1 = np.real(self.F / np.sqrt(np.dot(n.T, np.dot(M_1, n)) - d) * linalg.sqrtm(M))
-        
-        #print("M:\n", M, "\nn:\n", n, "\nd:\n", d)        
-        #print("M_1:\n",M_1, "\nb:\n", self.b, "\nA_1:\n", self.A_1)
-        
-        print("\nData normalized to ",self.F)        
-        print("Soft iron transformation matrix:\n",self.A_1)
+        # self.A_1 = np.real(self.F / np.sqrt(np.dot(n.T, np.dot(M_1, n)) - d) * linalg.sqrtm(M))
+        U, S, Vt = np.linalg.svd(M)
+        scale = np.cbrt(self.F / np.sqrt(np.dot(n.T, np.dot(M_1, n)) - d))  # cube root to keep volume
+        self.A_1 = np.dot(U, np.dot(np.diag(np.sqrt(S)), Vt)) * scale
+
+        print("\nDiagonal of A_1:", np.diag(self.A_1))
+        print("Norm of A_1:", np.linalg.norm(self.A_1))
+
+        print("\nData normalized to ", self.F)
+        print("Soft iron transformation matrix:\n", self.A_1)
         print("Hard iron bias:\n", self.b)
 
-        plt.rcParams["figure.autolayout"] = True
-        #fig = plt.figure()
-        #ax = fig.add_subplot(111, projection='3d')
-        #ax.scatter(data[:,0], data[:,1], data[:,2], marker='o', color='r')
-		#plt.show()
+        result = []
+        for row in data:
+            v = row.reshape(3, 1) - self.b  # subtract bias
+            v = np.dot(self.A_1.T, v)       # apply transpose of A_1
+            result.append(v.flatten())
 
-        result = [] 
-        for row in data: 
-        
-            # subtract the hard iron offset
-            xm_off  = row[0]-self.b[0]
-            ym_off  = row[1]-self.b[1]
-            zm_off  = row[2]-self.b[2]
-            
-            #multiply by the inverse soft iron offset
-            xm_cal = xm_off *  self.A_1[0,0] + ym_off *  self.A_1[0,1]  + zm_off *  self.A_1[0,2] 
-            ym_cal = xm_off *  self.A_1[1,0] + ym_off *  self.A_1[1,1]  + zm_off *  self.A_1[1,2] 
-            zm_cal = xm_off *  self.A_1[2,0] + ym_off *  self.A_1[2,1]  + zm_off *  self.A_1[2,2] 
+        result = np.array(result)
 
-            result = np.append(result, np.array([xm_cal, ym_cal, zm_cal]) )#, axis=0 )
+        # 3D plot: raw vs calibrated
+        fig = plt.figure(figsize=(12, 6))
+        ax1 = fig.add_subplot(121, projection='3d')
+        ax1.set_title("Raw Magnetometer Data")
+        ax1.scatter(data[:, 0], data[:, 1], data[:, 2], color='red', s=4)
+        ax1.set_xlabel("X"); ax1.set_ylabel("Y"); ax1.set_zlabel("Z")
+        ax1.grid(True)
 
-        result = result.reshape(-1, 3)
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        ax.scatter(result[:,0], result[:,1], result[:,2], marker='o', color='g')
+        ax2 = fig.add_subplot(122, projection='3d')
+        ax2.set_title("Calibrated Data (Should Be a Sphere)")
+        ax2.scatter(result[:, 0], result[:, 1], result[:, 2], color='green', s=4)
+        ax2.set_xlabel("X"); ax2.set_ylabel("Y"); ax2.set_zlabel("Z")
+        ax2.grid(True)
+
+        plt.tight_layout()
         plt.show()
-        
+
         print("First 5 rows calibrated:\n", result[:5])
-		
-        #save corrected data to file "out.txt"
+
+        # Save corrected data to file "out.txt"
         np.savetxt('out.txt', result, fmt='%f', delimiter=' ,')
 
-        print("*************************" )        
-        print("code to paste (edits required) : " )
-        print("*************************" )
-        self.b = np.round(self.b,2)
-        print("float B[3] = {", self.b[0],",", self.b[1],",", self.b[2],"};")
-        print("\n")
-        
-        self.A_1 = np.round(self.A_1,5)
+        print("*************************")
+        print("code to paste (edits required) :")
+        print("*************************")
+        self.b = np.round(self.b, 2)
+        print("float B[3] = {", self.b[0], ",", self.b[1], ",", self.b[2], "};\n")
+
+        self.A_1 = np.round(self.A_1, 5)
         print("float A_inv[3][3] = {")
-        print("{", self.A_1[0,0],",", self.A_1[0,1],",", self.A_1[0,2], "},")
-        print("{", self.A_1[1,0],",", self.A_1[1,1],",", self.A_1[2,1], "},")
-        print("{", self.A_1[2,0],",", self.A_1[2,1],",", self.A_1[2,2], "}};")
+        print("{", self.A_1[0, 0], ",", self.A_1[0, 1], ",", self.A_1[0, 2], "},")
+        print("{", self.A_1[1, 0], ",", self.A_1[1, 1], ",", self.A_1[1, 2], "},")
+        print("{", self.A_1[2, 0], ",", self.A_1[2, 1], ",", self.A_1[2, 2], "}};")
         print("\n")
+
+
+        # Calculate the range (max - min) for each axis
+        def axis_range(data):
+            return np.max(data, axis=0) - np.min(data, axis=0)
+
+        raw_range = axis_range(data)
+        calibrated_range = axis_range(result)
+
+        print("Raw data axis ranges (X, Y, Z):", raw_range)
+        print("Calibrated data axis ranges (X, Y, Z):", calibrated_range)
 
 
 
